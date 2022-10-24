@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	// "math/rand"
+	"math/rand"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -92,20 +92,24 @@ func run(cliCtx *cli.Context) error {
 		}
 	}
 
-	// create a random color palette
-	pal := ansi16ColorPalette[:]
-	// rand.Seed(time.Now().UnixNano())
-	// rand.Shuffle(len(pal), func(i, j int) {
-	// 	pal[i], pal[j] = pal[j], pal[i]
-	// })
-
-	// randomly assign colors to unassigned
-	i := 0
+	// assign colors to unassigned
 	for _, target := range targets {
 		if _, assigned := colormap[target.url]; !assigned {
-			colormap[target.url] = pal[i]
-			i += 1
-			i = i % len(pal)
+			// choose a random color
+			rand.Seed(time.Now().UnixNano())
+			randIdx := rand.Intn(len(ansi16ColorPalette) - 1)
+			newColor := ansi16ColorPalette[randIdx]
+
+			// find first free color if any
+			for _, color := range ansi16ColorPalette {
+				if _, ok := taken[color]; !ok {
+					newColor = color
+					break
+				}
+			}
+
+			taken[newColor] = true
+			colormap[target.url] = newColor
 		}
 	}
 
@@ -124,21 +128,18 @@ func run(cliCtx *cli.Context) error {
 		metadata := fmtProxyTarget{
 			proxyTarget: target,
 			color:       colormap[target.url],
-			pad:         uint(len(longestUrl)),
+			pad:         len(longestUrl),
 		}
-		ctx := context.WithValue(
-			context.Background(),
-			fmtProxyTargetKey{},
-			metadata,
-		)
 
-		handler := WithLogging(ctx, http.StripPrefix(target.pathPrefix, reverse))
-		proxyRouter.PathPrefix(target.pathPrefix).Handler(handler)
+		prefix := target.pathPrefix
+		handler := WithLogging(metadata, http.StripPrefix(prefix, reverse))
+		proxyRouter.PathPrefix(prefix).Handler(handler)
 	}
 
-	log.SetFormatter(&myFormatter{log.TextFormatter{
+	log.SetFormatter(&proxyFormatter{log.TextFormatter{
 		FullTimestamp:   true,
 		TimestampFormat: "2006-01-02 15:04:05",
+		DisableSorting:  false,
 	}})
 
 	server := &http.Server{Handler: proxyRouter}
