@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha1"
+	"encoding/binary"
 	"fmt"
 	"net/http"
 	"strings"
@@ -28,21 +31,78 @@ type (
 	// our formatter
 	myFormatter struct {
 		log.TextFormatter
-		// colorMap map[string]log.TextFormatter
+	}
+
+	// key for the formatter context
+	fmtProxyTargetKey struct{}
+
+	// formatter context for the proxy target
+	fmtProxyTarget struct {
+		proxyTarget
+		color uint
+		pad   uint
 	}
 )
 
+var ansi16ColorPalette = []uint{31, 32, 33, 34, 35, 36, 37}
+
+func stringToUint64(s string) uint64 {
+	hashed := sha1.Sum([]byte(s))
+	return binary.BigEndian.Uint64(hashed[:])
+}
+
+func stringToColorCode(s string, codes []uint) uint {
+	i := stringToUint64(s)
+	idx := i % uint64(len(codes))
+	return codes[idx]
+}
+
+func pad(s string, length int) string {
+	if len(s) >= length {
+		return s
+	}
+  output := strings.Repeat(" ", length-len(s)) + s
+	return output
+}
+
 func (f *myFormatter) Format(entry *log.Entry) ([]byte, error) {
-	color := uint(37) // white
+	var levelColor uint
+	switch entry.Level {
+	case log.DebugLevel, log.TraceLevel:
+		levelColor = 30
+	case log.WarnLevel:
+		levelColor = 33
+	case log.ErrorLevel, log.FatalLevel, log.PanicLevel:
+		levelColor = 31
+	case log.InfoLevel:
+		levelColor = 36
+	default:
+		levelColor = 37
+	}
+
+	var target fmtProxyTarget
 	if entry.Context != nil {
-		if c, ok := entry.Context.Value(colorKey{}).(uint); ok {
-			color = c
+		key := fmtProxyTargetKey{}
+		if t, ok := entry.Context.Value(key).(fmtProxyTarget); ok {
+			target = t
 		}
 	}
 	ts := entry.Time.Format(f.TimestampFormat)
 	level := strings.ToUpper(entry.Level.String())
-	msg := fmt.Sprintf("\x1b[%d;1m%s[%s] %s\x1b[0m\n", color, level, ts, entry.Message)
-	return []byte(msg), nil
+
+	var buf bytes.Buffer
+	// name := pad(target.proxyTarget.url, target.pad)
+	// fmt.Fprintf(buf, "\x1b[%d;1m%s:[%s] ", name)
+
+	// log level and timestamp first
+	fmt.Fprintf(&buf, "\x1b[%d;1m%s[%s]\x1b[0m", levelColor, level, ts)
+	fmt.Fprintf(&buf, " ")
+
+	// log message
+	fmt.Fprintf(&buf, "\x1b[%d;1m%s\x1b[0m", target.color, entry.Message)
+	fmt.Fprintf(&buf, "\n")
+
+	return buf.Bytes(), nil
 }
 
 func (r *loggingResponseWriter) Write(b []byte) (int, error) {

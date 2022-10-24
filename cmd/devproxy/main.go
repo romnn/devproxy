@@ -2,9 +2,8 @@ package main
 
 import (
 	"context"
-	"crypto/sha1"
-	"encoding/binary"
 	"fmt"
+	// "math/rand"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -15,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/gorilla/mux"
 	log "github.com/sirupsen/logrus"
 	"github.com/urfave/cli/v2"
 )
@@ -25,19 +25,10 @@ var Version = ""
 // Rev is set during build
 var Rev = ""
 
-var ansi16ColorPalette = []uint{31, 32, 33, 34, 35, 36, 37}
-
-type colorKey struct{}
-
-func stringToUint64(s string) uint64 {
-	hashed := sha1.Sum([]byte(s))
-	return binary.BigEndian.Uint64(hashed[:])
-}
-
-func stringToColorCode(s string, codes []uint) uint {
-	i := stringToUint64(s)
-	idx := i % uint64(len(codes))
-	return codes[idx]
+// proxy target
+type proxyTarget struct {
+	pathPrefix string
+	url        *url.URL
 }
 
 func run(cliCtx *cli.Context) error {
@@ -50,23 +41,76 @@ func run(cliCtx *cli.Context) error {
 		return fmt.Errorf("failed to listen: %v", err)
 	}
 
-	proxyRouter := http.NewServeMux()
+	var targets []proxyTarget
 	args := append([]string{cliCtx.Args().First()}, cliCtx.Args().Tail()...)
 	for _, target := range args {
 		split := strings.Split(target, "@")
 
-		// split must contain a route path component and the url to be proxied
+		// split must contain a prefix path and a target url
 		if len(split) != 2 {
 			log.Warnf("invalid target %q ignored", target)
 			continue
 		}
 
-		path := split[0]
-		targetUrl, err := url.Parse(split[1])
-		if err != nil {
-			log.Warnf("invalid url %q ignored", split[1])
+		// path prefix must not be empty
+		prefix := split[0]
+		if prefix == "" {
+			log.Warnf("empty prefix %q ignored", prefix)
+			continue
 		}
 
+		// target url must be a valid url
+		targetURL, err := url.Parse(split[1])
+		if err != nil {
+			log.Warnf("invalid url %q ignored", split[1])
+			continue
+		}
+		targets = append(targets, proxyTarget{
+			pathPrefix: prefix,
+			url:        targetURL,
+		})
+	}
+
+	// check for at least one valid target to proxy
+	if len(targets) == 0 {
+		return fmt.Errorf("no valid targets to proxy")
+	}
+
+	longestUrl := ""
+	taken := make(map[uint]bool)
+	colormap := make(map[*url.URL]uint)
+
+	// compute colors and padding
+	for _, target := range targets {
+		if len(target.url.String()) > len(longestUrl) {
+			longestUrl = target.url.String()
+		}
+		color := stringToColorCode(target.url.String(), ansi16ColorPalette)
+		if _, ok := taken[color]; !ok {
+			taken[color] = true
+			colormap[target.url] = color
+		}
+	}
+
+	// create a random color palette
+	pal := ansi16ColorPalette[:]
+	// rand.Seed(time.Now().UnixNano())
+	// rand.Shuffle(len(pal), func(i, j int) {
+	// 	pal[i], pal[j] = pal[j], pal[i]
+	// })
+
+	// randomly assign colors to unassigned
+	i := 0
+	for _, target := range targets {
+		if _, assigned := colormap[target.url]; !assigned {
+			colormap[target.url] = pal[i]
+			i += 1
+			i = i % len(pal)
+		}
+	}
+
+	proxyRouter := mux.NewRouter()
+	for _, target := range targets {
 		addCORS := func(res *http.Response) error {
 			res.Header.Set("Access-Control-Allow-Methods", "GET,HEAD,PUT,PATCH,POST,DELETE")
 			res.Header.Set("Access-Control-Allow-Credentials", "true")
@@ -74,13 +118,22 @@ func run(cliCtx *cli.Context) error {
 			return nil
 		}
 
-		reverse := httputil.NewSingleHostReverseProxy(targetUrl)
+		reverse := httputil.NewSingleHostReverseProxy(target.url)
 		reverse.ModifyResponse = addCORS
 
-		colorCode := stringToColorCode(targetUrl.String(), ansi16ColorPalette)
-		ctx := context.WithValue(context.Background(), colorKey{}, colorCode)
+		metadata := fmtProxyTarget{
+			proxyTarget: target,
+			color:       colormap[target.url],
+			pad:         uint(len(longestUrl)),
+		}
+		ctx := context.WithValue(
+			context.Background(),
+			fmtProxyTargetKey{},
+			metadata,
+		)
 
-		proxyRouter.Handle(path, WithLogging(ctx, http.StripPrefix(path, reverse)))
+		handler := WithLogging(ctx, http.StripPrefix(target.pathPrefix, reverse))
+		proxyRouter.PathPrefix(target.pathPrefix).Handler(handler)
 	}
 
 	log.SetFormatter(&myFormatter{log.TextFormatter{
@@ -96,7 +149,8 @@ func run(cliCtx *cli.Context) error {
 	}()
 
 	log.Infof("listening on: %v", listener.Addr())
-	if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+	err = server.Serve(listener)
+	if err != nil && err != http.ErrServerClosed {
 		return fmt.Errorf("failed to serve: %v", err)
 	}
 	return nil
