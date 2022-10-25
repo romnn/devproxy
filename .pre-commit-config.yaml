@@ -1,0 +1,24 @@
+repos:
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-build
+      - id: go-fmt
+        exclude: ^.*/gen/.*\.pb\.go$
+      - id: go-vet
+        exclude: ^.*/gen/.*\.pb\.go$
+      - id: go-lint
+        exclude: ^.*/gen/.*\.pb\.go$
+      - id: go-imports
+        exclude: ^.*/gen/.*\.pb\.go$
+      - id: go-cyclo
+        args: [-over=15]
+        exclude: ^.*/gen/.*\.pb\.go$
+
+  - repo: local
+    hooks:
+      - id: embed-examples
+        name: embed-examples
+        entry: npx embedme --verify README.md
+        language: system
+        pass_filenames: false

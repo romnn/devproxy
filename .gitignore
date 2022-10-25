@@ -1,0 +1,22 @@
+# Ignore all
+*
+
+# Unignore all with extensions
+!*.*
+
+# Unignore all dirs
+!*/
+
+# Unignore Dockerfile and other useful files
+!**/Dockerfile
+!**/.dockerignore
+!**/.gitattributes
+!**/LICENSE
+
+### Above combination will ignore all files without extension
+
+.DS_Store
+.vscode/
+.idea/
+coverage*
+*.exe
