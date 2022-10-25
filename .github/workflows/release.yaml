@@ -22,11 +22,38 @@ jobs:
             goos: windows
     steps:
       - uses: actions/checkout@v3
-      - uses: wangyoucao577/go-release-action@v1.32
+      - uses: actions/setup-go@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          goos: ${{ matrix.goos }}
-          goarch: ${{ matrix.goarch }}
-          project_path: "./cmd/devproxy"
-          binary_name: "devproxy"
-          extra_files: LICENSE README.md
+          go-version: 1.19.x
+      - id: query
+        uses: romnn/query-git-action@master
+
+      # - uses: wangyoucao577/go-release-action@v1.32
+      #   with:
+      #     github_token: ${{ secrets.GITHUB_TOKEN }}
+      #     goos: ${{ matrix.goos }}
+      #     goarch: ${{ matrix.goarch }}
+      #     project_path: "./cmd/devproxy"
+      #     binary_name: "devproxy"
+      #     extra_files: LICENSE README.md
+      #
+
+      - name: Build release binary
+        env:
+          GOARCH: ${{ matrix.goarch }}
+          GOOS: ${{ matrix.goos }}
+        run: >
+          go build -a 
+          -ldflags="-w -s"
+          -o build/devproxy-${{ matrix.goos }}-${{ matrix.goarch }} 
+          github.com/romnn/devproxy/cmd/devproxy
+
+      - name: Upload release binaries
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: build/*
+          tag: ${{ steps.query.outputs.stable_semver_version }}
+          release_name: ${{ steps.query.outputs.stable_semver_version }}
+          overwrite: true
+          file_glob: true
