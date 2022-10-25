@@ -38,14 +38,30 @@ jobs:
       #     extra_files: LICENSE README.md
       #
 
+      - name: Set binary name
+        id: bin_name
+        env:
+          BIN: devproxy-${{ matrix.goos }}-${{ matrix.goarch }}
+        run: |
+          if [ ${{ matrix.goos }} == "windows" ]
+          then
+            export BIN=$BIN.exe
+          fi
+          echo "BIN=$BIN" >> $GITHUB_OUTPUT
+
       - name: Build release binary
         env:
           GOARCH: ${{ matrix.goarch }}
           GOOS: ${{ matrix.goos }}
+          LDFLAGS: >
+            -w
+            -s
+            -X main.Version=${{ steps.query.outputs.stable_semver_version }}
+            -X main.Rev=${{ steps.query.outputs.stable_build_git_commit }}
         run: >
           go build -a 
-          -ldflags="-w -s"
-          -o build/devproxy-${{ matrix.goos }}-${{ matrix.goarch }} 
+          -ldflags="$LDFLAGS"
+          -o build/${{ steps.bin_name.outputs.BIN }} 
           github.com/romnn/devproxy/cmd/devproxy
 
       - name: Upload release binaries
