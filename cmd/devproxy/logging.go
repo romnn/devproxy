@@ -3,8 +3,6 @@ package main
 import (
 	"bytes"
 	"context"
-	"crypto/sha1"
-	"encoding/binary"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -28,23 +26,6 @@ type (
 		url    *url.URL
 	}
 
-	// context for holding response details
-	responseData struct {
-		status int
-		size   int
-	}
-
-	// custom http.ResponseWriter implementation
-	loggingResponseWriter struct {
-		http.ResponseWriter
-		responseData *responseData
-	}
-
-	// custom formatter
-	proxyFormatter struct {
-		log.TextFormatter
-	}
-
 	// key for the formatter context
 	fmtProxyTargetKey struct{}
 
@@ -54,31 +35,17 @@ type (
 		color uint
 		pad   int
 	}
+
+	// custom formatter
+	proxyFormatter struct {
+		log.TextFormatter
+	}
 )
 
 var ansi16ColorPalette = []uint{31, 32, 33, 34, 35, 36, 37}
 
 func (target *fmtProxyTarget) Url() string {
 	return pad(target.proxyTarget.url.String(), target.pad)
-}
-
-func stringToUint64(s string) uint64 {
-	hashed := sha1.Sum([]byte(s))
-	return binary.BigEndian.Uint64(hashed[:])
-}
-
-func stringToColorCode(s string, codes []uint) uint {
-	i := stringToUint64(s)
-	idx := i % uint64(len(codes))
-	return codes[idx]
-}
-
-func pad(s string, length int) string {
-	if len(s) >= length {
-		return s
-	}
-	output := strings.Repeat(" ", length-len(s)) + s
-	return output
 }
 
 func (f *proxyFormatter) Format(entry *log.Entry) ([]byte, error) {
@@ -132,34 +99,6 @@ func (f *proxyFormatter) Format(entry *log.Entry) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (r *loggingResponseWriter) Write(b []byte) (int, error) {
-	// write response using original http.ResponseWriter
-	size, err := r.ResponseWriter.Write(b)
-	// capture size
-	r.responseData.size += size
-	return size, err
-}
-
-func (r *loggingResponseWriter) WriteHeader(statusCode int) {
-	// write status code using original http.ResponseWriter
-	r.ResponseWriter.WriteHeader(statusCode)
-	// capture status code
-	r.responseData.status = statusCode
-}
-
-func roundDuration(d time.Duration) time.Duration {
-	div := time.Duration(100)
-	switch {
-	case d > time.Second:
-		d = d.Round(time.Second / div)
-	case d > time.Millisecond:
-		d = d.Round(time.Millisecond / div)
-	case d > time.Microsecond:
-		d = d.Round(time.Microsecond / div)
-	}
-	return d
-}
-
 func WithLogging(target fmtProxyTarget, h http.Handler) http.Handler {
 	loggingFn := func(rw http.ResponseWriter, req *http.Request) {
 		start := time.Now()
@@ -168,7 +107,7 @@ func WithLogging(target fmtProxyTarget, h http.Handler) http.Handler {
 			status: 0,
 			size:   0,
 		}
-		// inject custom implementation of http.ResponseWriter
+		// inject custom ResponseWriter
 		lrw := loggingResponseWriter{
 			ResponseWriter: rw,
 			responseData:   responseData,
@@ -177,6 +116,7 @@ func WithLogging(target fmtProxyTarget, h http.Handler) http.Handler {
 
 		duration := time.Since(start)
 
+		// add context with metadata for logging
 		ctx := context.WithValue(
 			context.Background(),
 			fmtProxyTargetKey{},
@@ -192,7 +132,6 @@ func WithLogging(target fmtProxyTarget, h http.Handler) http.Handler {
 				url:    req.URL,
 			},
 		)
-		// log request
 		msg := fmt.Sprintf("%s %s @ %s", req.Method, target.Url(), req.URL)
 		log.WithContext(requestCtx).WithFields(log.Fields{
 			"status":   responseData.status,
