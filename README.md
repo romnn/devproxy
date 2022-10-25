@@ -2,7 +2,6 @@
 
 [![Build Status](https://github.com/romnn/devproxy/workflows/test/badge.svg)](https://github.com/romnn/devproxy/actions)
 [![GitHub](https://img.shields.io/github/license/romnn/devproxy)](https://github.com/romnn/devproxy)
-[![GoDoc](https://godoc.org/github.com/romnn/devproxy?status.svg)](https://godoc.org/github.com/romnn/devproxy)
 
 `devproxy` is a tiny command line reverse proxy for local development 
 written in Go.
@@ -39,7 +38,7 @@ proxied to the frontend service at `/@http://127.0.0.1:8080`.
 
 Before you get started, make sure you have installed the following tools:
 
-    $ python3 -m pip install pre-commit bump2version invoke
+    $ python3 -m pip install pre-commit bump2version
     $ go install golang.org/x/tools/cmd/goimports
     $ go install golang.org/x/lint/golint
     $ go install github.com/fzipp/gocyclo
@@ -47,5 +46,5 @@ Before you get started, make sure you have installed the following tools:
 Please check that all checks pass:
 
 ```bash
-inv pre-commit
+pre-commit run --all-files
 ```

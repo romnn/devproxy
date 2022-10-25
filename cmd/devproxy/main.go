@@ -25,23 +25,24 @@ var Version = ""
 // Rev is set during build
 var Rev = ""
 
-// proxy target
+// a proxy target as specified by a rule
 type proxyTarget struct {
 	pathPrefix string
 	url        *url.URL
 }
 
-func run(cliCtx *cli.Context) error {
-	shutdownChan := make(chan os.Signal, 1)
-	signal.Notify(shutdownChan, syscall.SIGINT, syscall.SIGTERM)
-
-	addr := fmt.Sprintf(":%d", cliCtx.Uint("port"))
-	listener, err := net.Listen("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("failed to listen: %v", err)
+func getLongestURL(targets []*proxyTarget) string {
+	longestURL := ""
+	for _, target := range targets {
+		if len(target.url.String()) > len(longestURL) {
+			longestURL = target.url.String()
+		}
 	}
+	return longestURL
+}
 
-	var targets []proxyTarget
+func getValidProxyTargets(cliCtx *cli.Context) []*proxyTarget {
+	var targets []*proxyTarget
 	args := append([]string{cliCtx.Args().First()}, cliCtx.Args().Tail()...)
 	for _, target := range args {
 		split := strings.Split(target, "@")
@@ -65,26 +66,20 @@ func run(cliCtx *cli.Context) error {
 			log.Warnf("invalid url %q ignored", split[1])
 			continue
 		}
-		targets = append(targets, proxyTarget{
+		targets = append(targets, &proxyTarget{
 			pathPrefix: prefix,
 			url:        targetURL,
 		})
 	}
+	return targets
+}
 
-	// check for at least one valid target to proxy
-	if len(targets) == 0 {
-		return fmt.Errorf("no valid targets to proxy")
-	}
-
-	longestUrl := ""
+func assignColorsToProxyTargets(targets []*proxyTarget) map[*url.URL]uint {
 	taken := make(map[uint]bool)
 	colormap := make(map[*url.URL]uint)
 
 	// compute colors and padding
 	for _, target := range targets {
-		if len(target.url.String()) > len(longestUrl) {
-			longestUrl = target.url.String()
-		}
 		color := stringToColorCode(target.url.String(), ansi16ColorPalette)
 		if _, ok := taken[color]; !ok {
 			taken[color] = true
@@ -112,6 +107,28 @@ func run(cliCtx *cli.Context) error {
 			colormap[target.url] = newColor
 		}
 	}
+	return colormap
+}
+
+func run(cliCtx *cli.Context) error {
+	shutdownChan := make(chan os.Signal, 1)
+	signal.Notify(shutdownChan, syscall.SIGINT, syscall.SIGTERM)
+
+	addr := fmt.Sprintf(":%d", cliCtx.Uint("port"))
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("failed to listen: %v", err)
+	}
+
+	targets := getValidProxyTargets(cliCtx)
+
+	// check for at least one valid target to proxy
+	if len(targets) == 0 {
+		return fmt.Errorf("no valid targets to proxy")
+	}
+
+	longestURL := getLongestURL(targets)
+	colormap := assignColorsToProxyTargets(targets)
 
 	proxyRouter := mux.NewRouter()
 	for _, target := range targets {
@@ -128,7 +145,7 @@ func run(cliCtx *cli.Context) error {
 		metadata := fmtProxyTarget{
 			proxyTarget: target,
 			color:       colormap[target.url],
-			pad:         len(longestUrl),
+			pad:         len(longestURL),
 		}
 
 		prefix := target.pathPrefix

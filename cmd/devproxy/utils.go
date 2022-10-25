@@ -1,10 +1,10 @@
 package main
 
 import (
-  "time"
 	"crypto/sha1"
 	"encoding/binary"
 	"strings"
+	"time"
 )
 
 func stringToUint64(s string) uint64 {

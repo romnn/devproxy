@@ -31,7 +31,7 @@ type (
 
 	// context for formatting the proxy target
 	fmtProxyTarget struct {
-		proxyTarget
+		*proxyTarget
 		color uint
 		pad   int
 	}
@@ -44,7 +44,7 @@ type (
 
 var ansi16ColorPalette = []uint{31, 32, 33, 34, 35, 36, 37}
 
-func (target *fmtProxyTarget) Url() string {
+func (target *fmtProxyTarget) URL() string {
 	return pad(target.proxyTarget.url.String(), target.pad)
 }
 
@@ -99,6 +99,7 @@ func (f *proxyFormatter) Format(entry *log.Entry) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// WithLogging wraps a http.Handler for a proxy target to log requests
 func WithLogging(target fmtProxyTarget, h http.Handler) http.Handler {
 	loggingFn := func(rw http.ResponseWriter, req *http.Request) {
 		start := time.Now()
@@ -132,7 +133,7 @@ func WithLogging(target fmtProxyTarget, h http.Handler) http.Handler {
 				url:    req.URL,
 			},
 		)
-		msg := fmt.Sprintf("%s %s @ %s", req.Method, target.Url(), req.URL)
+		msg := fmt.Sprintf("%s %s @ %s", req.Method, target.URL(), req.URL)
 		log.WithContext(requestCtx).WithFields(log.Fields{
 			"status":   responseData.status,
 			"duration": pad(roundDuration(duration).String(), 8),
