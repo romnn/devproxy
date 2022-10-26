@@ -28,16 +28,6 @@ jobs:
       - id: query
         uses: romnn/query-git-action@master
 
-      # - uses: wangyoucao577/go-release-action@v1.32
-      #   with:
-      #     github_token: ${{ secrets.GITHUB_TOKEN }}
-      #     goos: ${{ matrix.goos }}
-      #     goarch: ${{ matrix.goarch }}
-      #     project_path: "./cmd/devproxy"
-      #     binary_name: "devproxy"
-      #     extra_files: LICENSE README.md
-      #
-
       - name: Set binary name
         id: bin_name
         env:
@@ -68,6 +58,7 @@ jobs:
         uses: svenstaro/upload-release-action@v2
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
+          body: devproxy ${{ steps.query.outputs.stable_semver_version }}
           file: build/*
           tag: ${{ steps.query.outputs.stable_semver_version }}
           release_name: ${{ steps.query.outputs.stable_semver_version }}

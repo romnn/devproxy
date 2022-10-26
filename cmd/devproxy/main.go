@@ -185,7 +185,7 @@ func main() {
 				Email: "contact@romnn.com",
 			},
 		},
-		Usage: "todo",
+		Usage: "reverse proxy for local development",
 		Commands: []*cli.Command{
 			&cli.Command{
 				Name:        "start",
