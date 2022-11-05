@@ -1,6 +1,9 @@
 package main
 
 import (
+	"bufio"
+	"fmt"
+	"net"
 	"net/http"
 )
 
@@ -18,17 +21,25 @@ type (
 	}
 )
 
-func (r *loggingResponseWriter) Write(b []byte) (int, error) {
+func (w *loggingResponseWriter) Write(b []byte) (int, error) {
 	// write response using original http.ResponseWriter
-	size, err := r.ResponseWriter.Write(b)
+	size, err := w.ResponseWriter.Write(b)
 	// capture size
-	r.responseData.size += size
+	w.responseData.size += size
 	return size, err
 }
 
-func (r *loggingResponseWriter) WriteHeader(statusCode int) {
+func (w *loggingResponseWriter) WriteHeader(statusCode int) {
 	// write status code using original http.ResponseWriter
-	r.ResponseWriter.WriteHeader(statusCode)
+	w.ResponseWriter.WriteHeader(statusCode)
 	// capture status code
-	r.responseData.status = statusCode
+	w.responseData.status = statusCode
+}
+
+func (w *loggingResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	hijack, ok := w.ResponseWriter.(http.Hijacker)
+	if !ok {
+		return nil, nil, fmt.Errorf("%v does not support hijack", w.ResponseWriter)
+	}
+	return hijack.Hijack()
 }
